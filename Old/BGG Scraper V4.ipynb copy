@@ -1,0 +1,1143 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# BGG Scraper\n",
+    "\n",
+    "This script is optimized to collect information from BGG web pages using their XMLAPI2 API.\n",
+    "\n",
+    "All games are displayed on a search page provided by the site. We use that as a starting point for the scraper. With games ID (witch are unique) we are able to collect even more information about them, specialy the Statistics data.\n",
+    "\n",
+    "The API alow us to query for more than 1 game, making the extraction incredibly more efficient, restricted only by the size of the URL itself. There for, we have to break the URLs into smaller groups. In this case, 500 games per request is enought to get the date without overloading the downloaded string."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {},
+   "outputs": [
+    {
+     "ename": "IndentationError",
+     "evalue": "unindent does not match any outer indentation level (<tokenize>, line 53)",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;36m  File \u001b[0;32m\"<tokenize>\"\u001b[0;36m, line \u001b[0;32m53\u001b[0m\n\u001b[0;31m    temp = int(self.item['yearpublished']['@value'])\u001b[0m\n\u001b[0m    ^\u001b[0m\n\u001b[0;31mIndentationError\u001b[0m\u001b[0;31m:\u001b[0m unindent does not match any outer indentation level\n"
+     ]
+    }
+   ],
+   "source": [
+    "\"\"\"Boardgame class\"\"\"\n",
+    "\n",
+    "class BoardGame(object):\n",
+    "    \"\"\"Object containing information about a boardgame\"\"\"\n",
+    "    \n",
+    "    def __init__(self, data):\n",
+    "        self._data = data\n",
+    "    \n",
+    "    def __len__(self):\n",
+    "        return self._data_len\n",
+    "    \n",
+    "    def __repr__(self):\n",
+    "        return(\"Boardgame(\" + self.name + \")\")\n",
+    "    \n",
+    "    def data(self):\n",
+    "        \"\"\"Internal data dictionary\"\"\"\n",
+    "        return self._data\n",
+    "    \n",
+    "    @property\n",
+    "    def item(self):\n",
+    "        \"\"\"Internal dictionary of 'item'\"\"\"\n",
+    "        return self._data #['items']['item']\n",
+    "        \n",
+    "    @property\n",
+    "    def statistics(self):\n",
+    "        \"\"\"Internal dictionary of 'statistics'\"\"\"\n",
+    "        return self.item['statistics']\n",
+    "    \n",
+    "    @property\n",
+    "    def name(self):\n",
+    "        \"\"\"object name\"\"\"\n",
+    "        try:\n",
+    "            return self.item['name']['@value']\n",
+    "        except:\n",
+    "            return self.item['name'][0]['@value']\n",
+    "\n",
+    "            \n",
+    "    @property\n",
+    "    def id(self):\n",
+    "        \"\"\"BGG ID\"\"\"\n",
+    "        return self.item['@id']\n",
+    "        \n",
+    "    @property\n",
+    "    def description(self):\n",
+    "        \"\"\"Game description\"\"\"\n",
+    "        return self.item['description']\n",
+    "        \n",
+    "    @property\n",
+    "    def year_published(self):\n",
+    "        \"\"\"Year of publication\"\"\"\n",
+    "\n",
+    "                try:\n",
+    "            temp = int(self.item['yearpublished']['@value'])\n",
+    "        except:\n",
+    "            temp = 0\n",
+    "        \n",
+    "        return temp\n",
+    "        \n",
+    "    @property\n",
+    "    def min_players(self):\n",
+    "        \"\"\"Minimum number of players, according to publisher\"\"\"\n",
+    "        return int(self.item['minplayers']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def max_players(self):\n",
+    "        \"\"\"Maximum number of players, according to publisher\"\"\"\n",
+    "        return int(self.item['maxplayers']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def suggested_players(self):\n",
+    "        \"\"\"BGG users suggested best player count\"\"\"\n",
+    "        poll = self.item['poll']\n",
+    "        poll_names = [ii['@name'] for ii in poll]\n",
+    "        poll = poll[poll_names.index('suggested_numplayers')]['results']\n",
+    "        \n",
+    "        best_player_cnt = {}\n",
+    "        def _get_best_num_players(index):\n",
+    "            numplay = poll[index]['@numplayers']\n",
+    "            best_votes = poll[index]['result'][0]['@numvotes']\n",
+    "            best_player_cnt[numplay] = int(best_votes)\n",
+    "        \n",
+    "        for x in range(len(poll)):\n",
+    "            _get_best_num_players(x) \n",
+    "        max_votes = max(list(best_player_cnt.values()))\n",
+    "        \n",
+    "        suggested_players = [count for count, votes in best_player_cnt.items() if votes == max_votes][0]\n",
+    "                \n",
+    "        return suggested_players\n",
+    "    \n",
+    "    @property\n",
+    "    def min_age(self):\n",
+    "        \"\"\"Publisher defined minimum age\"\"\"\n",
+    "        try:\n",
+    "            temp = int(self.item['minage']['@value'])\n",
+    "        except:\n",
+    "            temp = 0\n",
+    "        \n",
+    "        return temp\n",
+    "        \n",
+    "    @property\n",
+    "    def suggested_player_age(self):\n",
+    "        \"\"\"BGG users suggested minimum age\"\"\"\n",
+    "        poll = self.item['poll']\n",
+    "        poll_names = [ii['@name'] for ii in poll]\n",
+    "        poll = poll[poll_names.index('suggested_playerage')]['results']['result']\n",
+    "        \n",
+    "        best_player_age = {}\n",
+    "        def _get_best_age_players(index):\n",
+    "            age = poll[index]['@value']\n",
+    "            num_votes = poll[index]['@numvotes']\n",
+    "            best_player_age[age] = int(num_votes)\n",
+    "        \n",
+    "        for x in range(len(poll)):\n",
+    "            _get_best_age_players(x)\n",
+    "        \n",
+    "        max_votes = max(list(best_player_age.values()))\n",
+    "        \n",
+    "        suggested_age = [count for count, votes in best_player_age.items() if votes == max_votes][0]\n",
+    "        \n",
+    "        return int(suggested_age)\n",
+    "    \n",
+    "    @property\n",
+    "    def language_dependence(self):\n",
+    "        \"\"\"BGG users suggested language dependence\"\"\"\n",
+    "        poll = self.item['poll']\n",
+    "        poll_names = [ii['@name'] for ii in poll]\n",
+    "        poll = poll[poll_names.index('language_dependence')]['results']['result']\n",
+    "        \n",
+    "        voted_language_dependence = {}\n",
+    "        def _get_language_requirements(index):\n",
+    "            language_level = poll[index]['@value']\n",
+    "            num_votes = poll[index]['@numvotes']\n",
+    "            voted_language_dependence[language_level] = int(num_votes)\n",
+    "        \n",
+    "        for x in range(len(poll)):\n",
+    "            _get_language_requirements(x)\n",
+    "            \n",
+    "        max_votes = max(list(voted_language_dependence.values()))\n",
+    "        language_requirement = [count for count, votes in voted_language_dependence.items() if votes == max_votes][0]\n",
+    "        \n",
+    "        return language_requirement\n",
+    "        \n",
+    "    @property\n",
+    "    def playing_time(self):\n",
+    "        \"\"\"BGG suggested playing time\"\"\"\n",
+    "        return int(self.item['playingtime']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def min_play_time(self):\n",
+    "        \"\"\"Publisher defined minimum play time\"\"\"\n",
+    "        return int(self.item['minplaytime']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def max_play_time(self):\n",
+    "        \"\"\"Publisher defined maximum play time\"\"\"\n",
+    "        return int(self.item['maxplaytime']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def categories(self):\n",
+    "        \"\"\"List of game categories (i.e. theme)\"\"\"\n",
+    "        link = self.item['link']\n",
+    "        link_names = [ii['@type'] for ii in link]\n",
+    "        names_index = [i for i, x in enumerate(link_names) if x == 'boardgamecategory']\n",
+    "        categories = [link[ii]['@value'] for ii in names_index]\n",
+    "        \n",
+    "        return categories\n",
+    "        \n",
+    "    @property\n",
+    "    def mechanics(self):\n",
+    "        \"\"\"List of game categories (i.e. tile-laying, set collection)\"\"\"\n",
+    "        link = self.item['link']\n",
+    "        try:\n",
+    "            link_names = [ii['@type'] for ii in link]\n",
+    "            names_index = [i for i, x in enumerate(link_names) if x == 'boardgamemechanic']\n",
+    "            mechanics = [link[ii]['@value'] for ii in names_index]\n",
+    "        except:\n",
+    "            link_names = 'NEDD A FIX'\n",
+    "        return mechanics\n",
+    "        \n",
+    "    @property\n",
+    "    def game_family(self):\n",
+    "        \"\"\"List of game families (i.e. Kickstarter, Made in Canda)\"\"\"\n",
+    "        link = self.item['link']\n",
+    "        link_names = [ii['@type'] for ii in link]\n",
+    "        names_index = [i for i, x in enumerate(link_names) if x == 'boardgamefamily']\n",
+    "        family = [link[ii]['@value'] for ii in names_index]\n",
+    "        \n",
+    "        return family\n",
+    "        \n",
+    "    @property\n",
+    "    def implementations(self):\n",
+    "        \"\"\"Does game implement another? (e.g. Pandemic: Legacy re-implements Pandemic)\"\"\"\n",
+    "        link = self.item['link']\n",
+    "        link_names = [ii['@type'] for ii in link]\n",
+    "        names_index = [i for i, x in enumerate(link_names) if x == 'boardgameimplementation']\n",
+    "        implements = [link[ii]['@value'] for ii in names_index]\n",
+    "        \n",
+    "        return implements\n",
+    "        \n",
+    "    @property\n",
+    "    def designers(self):\n",
+    "        \"\"\"List of game's designers\"\"\"\n",
+    "        link = self.item['link']\n",
+    "        link_names = [ii['@type'] for ii in link]\n",
+    "        names_index = [i for i, x in enumerate(link_names) if x == 'boardgamedesigner']\n",
+    "        designers = [link[ii]['@value'] for ii in names_index]\n",
+    "        \n",
+    "        return designers\n",
+    "        \n",
+    "    @property\n",
+    "    def artists(self):\n",
+    "        \"\"\"List of game's artists\"\"\"\n",
+    "        link = self.item['link']\n",
+    "        link_names = [ii['@type'] for ii in link]\n",
+    "        names_index = [i for i, x in enumerate(link_names) if x == 'boardgameartist']\n",
+    "        artists = [link[ii]['@value'] for ii in names_index]\n",
+    "        \n",
+    "        return artists\n",
+    "        \n",
+    "    @property\n",
+    "    def publishers(self):\n",
+    "        \"\"\"List of game's Publisher\"\"\"\n",
+    "        link = self.item['link']\n",
+    "        try:\n",
+    "            link_names = [ii['@type'] for ii in link]\n",
+    "            names_index = [i for i, x in enumerate(link_names) if x == 'boardgamepublisher']\n",
+    "            publishers = [link[ii]['@value'] for ii in names_index]\n",
+    "        except:\n",
+    "            link_names = link[0]['@type']\n",
+    "            names_index = [i for i, x in enumerate(link_names) if x == 'boardgamepublisher']\n",
+    "            publishers = link[0]['@value']\n",
+    "        \n",
+    "        return publishers\n",
+    "    \n",
+    "    \n",
+    "    \n",
+    "    \n",
+    "        \n",
+    "    @property\n",
+    "    def rank(self):\n",
+    "        \"\"\"Dictionary of games various ranks (e.g. Overall, Strategy Games, Family, etc.)\"\"\"\n",
+    "\n",
+    "        rankings = self.statistics['ratings']['ranks']['rank']\n",
+    "        \n",
+    "        num_rank_names = sum([i == '@name'for i in rankings])\n",
+    "        \n",
+    "        if num_rank_names == 1:\n",
+    "            if type(rankings) is int:\n",
+    "                ranks = {'boardgame':float(rankings['@value'])}\n",
+    "            else:\n",
+    "                ranks = {'boardgame': 0}\n",
+    "        else:\n",
+    "            rank_names = [ii['@name'] for ii in rankings]\n",
+    "            \n",
+    "            ranks = {}\n",
+    "            def _get_ranking(name):\n",
+    "                name_rank = rank_names.index(name)\n",
+    "                if type(rankings[name_rank]['@value']) is int:\n",
+    "                    ranks[name] = int(rankings[name_rank]['@value'])\n",
+    "                else:\n",
+    "                    ranks[name] = 0\n",
+    "            for ii in rank_names:\n",
+    "                _get_ranking(ii)\n",
+    "        \n",
+    "        return ranks\n",
+    "    \n",
+    "    @property\n",
+    "    def ranks_bayes(self):\n",
+    "        \"\"\"Dictionary of games various bayesian ranks (e.g. Overall, Strategy Games, Family, etc.)\"\"\"\n",
+    "        rankings = self.statistics['ratings']['ranks']['rank']\n",
+    "        num_rank_names = sum([i == '@name' for i in rankings])\n",
+    "        \n",
+    "        if num_rank_names == 1:\n",
+    "            ranks = {'boardgame':float(rankings['@bayesaverage'])}\n",
+    "        \n",
+    "        else:\n",
+    "            rank_names = [ii['@name'] for ii in rankings]\n",
+    "            \n",
+    "            ranks = {}\n",
+    "            def _get_bayes_ranking(name):\n",
+    "                name_rank = rank_names.index(name)\n",
+    "                ranks[name] = float(rankings[name_rank]['@bayesaverage'])\n",
+    "            \n",
+    "            for ii in rank_names:\n",
+    "                _get_bayes_ranking(ii)\n",
+    "        \n",
+    "        return ranks\n",
+    "    \n",
+    "    @property\n",
+    "    def users_rated(self):\n",
+    "        \"\"\"Number of BGG users who've rated game\"\"\"\n",
+    "        return int(self.statistics['ratings']['usersrated']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def avg_rating(self):\n",
+    "        \"\"\"Average BGG user rating (10-point scale)\"\"\"\n",
+    "        return float(self.statistics['ratings']['average']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def bayes_avg_rating(self):\n",
+    "        \"\"\"Average BGG user's bayesian rating (10-point scale)\"\"\"\n",
+    "        return float(self.statistics['ratings']['bayesaverage']['@value'])\n",
+    "    \n",
+    "    @property\n",
+    "    def stdev_rating(self):\n",
+    "        \"\"\"Standard deviation of BGG user rating (10-point scale)\"\"\"\n",
+    "        return float(self.statistics['ratings']['stddev']['@value'])\n",
+    "    \n",
+    "    @property\n",
+    "    def median_rating(self):\n",
+    "        \"\"\"Median BGG user rating (10-point scale)\"\"\"\n",
+    "        return float(self.statistics['ratings']['median']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def num_owned(self):\n",
+    "        \"\"\"Number of BGG users who own this game\"\"\"\n",
+    "        return  int(self.statistics['ratings']['owned']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def num_trading(self):\n",
+    "        \"\"\"Number of copies being traded on BGG marketplace\"\"\"\n",
+    "        return int(self.statistics['ratings']['trading']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def num_wanting(self):\n",
+    "        \"\"\"Number of BGG users who want to buy this game\"\"\"\n",
+    "        return int(self.statistics['ratings']['wanting']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def num_wishing(self):\n",
+    "        \"\"\"Number of BGG users who wish they had this game\"\"\"\n",
+    "        return int(self.statistics['ratings']['wishing']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def num_comments(self):\n",
+    "        \"\"\"Number of comments about the game\"\"\"\n",
+    "        return int(self.statistics['ratings']['numcomments']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def num_weights(self):\n",
+    "        \"\"\"Number of BGG users who have assigned the game a weight (5-point scale)\"\"\"\n",
+    "        return int(self.statistics['ratings']['numweights']['@value'])\n",
+    "        \n",
+    "    @property\n",
+    "    def avg_weight(self):\n",
+    "        \"\"\"Average weight assigned by BGG users (5-point scale)\"\"\"\n",
+    "        return float(self.statistics['ratings']['averageweight']['@value'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Import necessary packages\n",
+    "\n",
+    "First, import all packages necessary for this extraction."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "\"\"\"Main boardgame script file\"\"\"\n",
+    "\n",
+    "import pickle\n",
+    "import pandas as pd\n",
+    "import time \n",
+    "# from urllib2 import urlopen\n",
+    "from urllib.request import urlopen\n",
+    "import requests\n",
+    "import re\n",
+    "from bs4 import BeautifulSoup as BS\n",
+    "import xmltodict\n",
+    "import time\n",
+    "import progressbar\n",
+    "import sys\n",
+    "import numpy as np\n",
+    "import pyodbc\n",
+    "import json\n",
+    "import math\n",
+    "from tqdm import tqdm"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "total_timer_start = time.time()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Download pages from the internet (not yet games details, just ID and Name)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This function is used to download the Game ID from BGG search page. This will be helpful to collect information about the game itself later on, based on the IDs.\n",
+    "\n",
+    "The Game name is also downloaded, but in the end, it is not used."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def pull_game_names(page):\n",
+    "    \"\"\"Get all game names and IDs from a page of BGG website.\n",
+    "    \n",
+    "    Description:\n",
+    "        Scrapes Board Game Geek website games in order of rank.\n",
+    "        Returns a dictionary of games titles:BGG ID, given a page number\n",
+    "        Games are listed in increments of 50\n",
+    "        \n",
+    "    inputs:\n",
+    "        page (int): Page number (starts at 1)\n",
+    "        \n",
+    "    returns:\n",
+    "        game_list (dict): {Name:ID}\n",
+    "    \"\"\"\n",
+    "    url = 'https://boardgamegeek.com/browse/boardgame/page/{}'.format(page)\n",
+    "    bgg_page = urlopen(url)\n",
+    "\n",
+    "    my_bytes = bgg_page.read()\n",
+    "    url_text = my_bytes.decode(\"utf8\")\n",
+    "    bgg_page.close()\n",
+    "    url_text = BS(url_text, 'html.parser')\n",
+    "    \n",
+    "    games = url_text.find_all(\"td\", class_=\"collection_objectname\")\n",
+    "    \n",
+    "    def get_game_name(item):\n",
+    "        game_name = item.findNext('a').text\n",
+    "        return(game_name)\n",
+    "        \n",
+    "    def get_game_ID(item):\n",
+    "        game_link_id = str(item.findNext('a'))\n",
+    "        game_link_id = re.search('[0-9]{1,7}', game_link_id).group(0)\n",
+    "        return(int(game_link_id))\n",
+    "    \n",
+    "    game_list = {get_game_name(ii):get_game_ID(ii) for ii in games}\n",
+    "    \n",
+    "\n",
+    "    return(game_list)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def list_to_boardgame_class(num_pages):\n",
+    "\n",
+    "    \"\"\"Return list of Boardgame Objects\n",
+    "    \n",
+    "    Description:\n",
+    "        Calls pull_game_names() and boardgame_info(), passing information to \n",
+    "        Boardgame() class, and returns a list of all class objects.\n",
+    "     \n",
+    "    Input:\n",
+    "        num_pages (int): Number of pages of games (100 per page)\n",
+    "    \n",
+    "    Returns:\n",
+    "        all_games (list): List of each game as a Boardgame object\n",
+    "    \n",
+    "    \"\"\"\n",
+    "    ## Get boardgame names and IDs for the top 1000 games (10 pages)\n",
+    "    game_list = [pull_game_names(ii) for ii in progressbar.log_progress(range(1, num_pages + 1),'Game List')]\n",
+    "    game_IDs = [x for y in list([ii.values() for ii in game_list]) for x in y]\n",
+    "    ## Connect IDs with BGG API, get game information\n",
+    "\n",
+    "    return(game_IDs) #(game_list, game_IDs)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Procedure Start\n",
+    "\n",
+    "We start here by going througth the pages and collecting the BoardGame ID. Then, we append that to a list with all games IDs\n",
+    "\n",
+    "### Feedback\n",
+    "Sometimes scripts run for a long time without stopping, specialy with URL request, since those rely on the connection itself. Or even for long loops.\n",
+    "In this case, both things happen, so I added a ProgressBar as a way to know if the script is really running correctly. \n",
+    "\n",
+    "The user feedback function is called **progressbar.log_progress(list, string)**"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "f96aa9d43a33479daa0a4413092cb0a1",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=1055)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Scraping complete\n",
+      "Elapsed time:  01:13:56\n"
+     ]
+    }
+   ],
+   "source": [
+    "start = time.time()\n",
+    "\n",
+    "num_pages = 1055\n",
+    "\n",
+    "if __name__ == \"__main__\":\n",
+    "    ## Get boardgame names and IDs for the top xxx games (100 * num_pages)\n",
+    "    all_games_IDs = list_to_boardgame_class(num_pages)\n",
+    "    print(\"Scraping complete\")\n",
+    "\n",
+    "end = time.time()\n",
+    "print('Elapsed time: ', time.strftime(\"%H:%M:%S\", time.gmtime(end-start)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "105390"
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "len(all_games_IDs)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Building URL with 500 games to increase download performance"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "all_games_IDs_backup = all_games_IDs.copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Number of searches: 264\n"
+     ]
+    }
+   ],
+   "source": [
+    "ids_already_processed = []\n",
+    "list_of_urls = []\n",
+    "number_of_games_on_search = 400\n",
+    "search_len = math.ceil(len(all_games_IDs)/number_of_games_on_search) #math.ceil will round up to the next integer\n",
+    "if search_len < 1:\n",
+    "    search_len = 1\n",
+    "print('Number of searches:', search_len)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "for i in range(int(search_len)):\n",
+    "    url = 'https://boardgamegeek.com/xmlapi2/thing?id='\n",
+    "    for ID in all_games_IDs[:number_of_games_on_search]:\n",
+    "            url = url + str(ID) + ','\n",
+    "            ids_already_processed.append(ID)\n",
+    "            all_games_IDs.remove(ID)\n",
+    "    url= url[:-1] + '&stats=1'\n",
+    "    list_of_urls.append(url)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Number of XMLs is 264 ,with a total of  105390 games\n"
+     ]
+    }
+   ],
+   "source": [
+    "print('Number of XMLs is', len(list_of_urls), ',with a total of ',len(ids_already_processed),'games')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Download game details\n",
+    "\n",
+    "If game IDs collected and URLs group and ready, we can finally download the XMLs from BGG Website"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### First try\n",
+    "Sometimes the page returns an error for a few requests. Since this takes a long time to finish, I divided this in two parts\n",
+    "\n",
+    "1) First, download pages from the web and store in a list\n",
+    "    a) While doing that, check for errors in the download and store on another list for a second retry\n",
+    "\n",
+    "2) With everything local, parse the XMLL. This will avoid having to download everything again in search for errors"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Checkpoint"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "save_list_of_urls = list_of_urls.copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {
+    "scrolled": false
+   },
+   "outputs": [],
+   "source": [
+    "def download_bg_details(list_of_urls_to_download):\n",
+    "    for url in progressbar.log_progress(list_of_urls_to_download, 'Downloading Pages (Multiple Games Details)'):\n",
+    "            page = requests.get(url)\n",
+    "            if page.status_code == requests.codes.ok:\n",
+    "                successful_requests.append(page)\n",
+    "            else:\n",
+    "                bad_url_request.append(url)\n",
+    "    if len(bad_url_request) != 0:\n",
+    "        download_bg_details(bad_url_request)\n",
+    "    return successful_requests"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "first_half = int(round(len(list_of_urls)/2,0))\n",
+    "second_half = int((len(list_of_urls) - first_half)*-1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "d570471bfc7d458fa3994c3c2f91fbc0",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=132)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "0d90e2bedde64e8e9509cca8bc988e4d",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=132)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Elapsed time:  00:26:20\n"
+     ]
+    }
+   ],
+   "source": [
+    "start = time.time()\n",
+    "bad_url_request = []\n",
+    "successful_requests = []\n",
+    "\n",
+    "downloaded_xmls = download_bg_details(list_of_urls[:first_half])\n",
+    "downloaded_xmls = download_bg_details(list_of_urls[:second_half])\n",
+    "\n",
+    "end = time.time()\n",
+    "print('Elapsed time: ', time.strftime(\"%H:%M:%S\", time.gmtime(end-start)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0"
+      ]
+     },
+     "execution_count": 16,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "dup = []\n",
+    "unique = []\n",
+    "for item in downloaded_xmls:\n",
+    "    if item not in unique:\n",
+    "        unique.append(item)\n",
+    "    else:\n",
+    "        dup.append(item)\n",
+    "len(dup)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "backup_of_downloads = downloaded_xmls.copy"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Breacking down the XMLs received into a list with BoardGame objects"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from itertools import chain, starmap\n",
+    "\n",
+    "def flatten_json_iterative_solution(dictionary):\n",
+    "    \"\"\"Flatten a nested json file\"\"\"\n",
+    "\n",
+    "    def unpack(parent_key, parent_value):\n",
+    "        \"\"\"Unpack one level of nesting in json file\"\"\"\n",
+    "        # Unpack one level only!!!\n",
+    "        \n",
+    "        if isinstance(parent_value, dict):\n",
+    "            for key, value in parent_value.items():\n",
+    "                temp1 = parent_key + '_' + key\n",
+    "                yield temp1, value\n",
+    "        elif isinstance(parent_value, list):\n",
+    "            i = 0 \n",
+    "            for value in parent_value:\n",
+    "                temp2 = parent_key + '_'+str(i) \n",
+    "                i += 1\n",
+    "                yield temp2, value\n",
+    "        else:\n",
+    "            yield parent_key, parent_value    \n",
+    "\n",
+    "            \n",
+    "    # Keep iterating until the termination condition is satisfied\n",
+    "    while True:\n",
+    "        # Keep unpacking the json file until all values are atomic elements (not dictionary or list)\n",
+    "        dictionary = dict(chain.from_iterable(starmap(unpack, dictionary.items())))\n",
+    "        # Terminate condition: not any value in the json file is dictionary or list\n",
+    "        if not any(isinstance(value, dict) for value in dictionary.values()) and \\\n",
+    "           not any(isinstance(value, list) for value in dictionary.values()):\n",
+    "            break\n",
+    "\n",
+    "    return dictionary"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "600055afe9764fae88b001bfc37354f1",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=264)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Elapsed time:  00:01:26\n"
+     ]
+    }
+   ],
+   "source": [
+    "start = time.time()\n",
+    "flatted_list = []\n",
+    "\n",
+    "for item in progressbar.log_progress(downloaded_xmls, 'Pages on XML'):\n",
+    "    page_xml = xmltodict.parse(item.content)\n",
+    "    for each_game in page_xml['items']['item']:\n",
+    "        temp = BoardGame(each_game)\n",
+    "        flatted_list.append(temp)\n",
+    "end = time.time()\n",
+    "print('Elapsed time: ', time.strftime(\"%H:%M:%S\", time.gmtime(end-start)))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Build DataFrame\n",
+    "\n",
+    "Finaly we build the DataFrame of all games. This process is taking very long to complete. Improvements may be necessary."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "55242f432aa4482dabc4ce5384a33dfa",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=105600)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "65de29b9d1104077a67a65512166dcff",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=105600)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "bg_df = pd.DataFrame()\n",
+    "bg_df['Name'] = [i.name for i in progressbar.log_progress(flatted_list, 'Scanning Name')]\n",
+    "bg_df['ID'] = [i.id for i in progressbar.log_progress(flatted_list, 'Scanning ID')]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "7731b82d94b0464498e20b089df395ce",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=105600)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "5844f921c4454f6f848aba2a2f1f70ef",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=105600)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "application/vnd.jupyter.widget-view+json": {
+       "model_id": "82b51e331578415e842577e2d9b10439",
+       "version_major": 2,
+       "version_minor": 0
+      },
+      "text/plain": [
+       "VBox(children=(HTML(value=''), IntProgress(value=0, max=105600)))"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "ename": "ValueError",
+     "evalue": "invalid literal for int() with base 10: ''",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mValueError\u001b[0m                                Traceback (most recent call last)",
+      "\u001b[0;32m<ipython-input-21-d531bc967d0a>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[1;32m      1\u001b[0m \u001b[0mbg_df\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Year'\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0myear_published\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mi\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mprogressbar\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlog_progress\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mflatted_list\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'Scanning Year Published'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      2\u001b[0m \u001b[0mbg_df\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Publisher'\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mpublishers\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mi\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mprogressbar\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlog_progress\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mflatted_list\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'Scanning Publishers'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m----> 3\u001b[0;31m \u001b[0mbg_df\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Minimum Players'\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmin_players\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mi\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mprogressbar\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlog_progress\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mflatted_list\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'Scanning Min Players'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m      4\u001b[0m \u001b[0mbg_df\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Max Players'\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmax_players\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mi\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mprogressbar\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlog_progress\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mflatted_list\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'Scanning Max Players'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      5\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m<ipython-input-21-d531bc967d0a>\u001b[0m in \u001b[0;36m<listcomp>\u001b[0;34m(.0)\u001b[0m\n\u001b[1;32m      1\u001b[0m \u001b[0mbg_df\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Year'\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0myear_published\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mi\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mprogressbar\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlog_progress\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mflatted_list\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'Scanning Year Published'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      2\u001b[0m \u001b[0mbg_df\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Publisher'\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mpublishers\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;36m0\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mi\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mprogressbar\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlog_progress\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mflatted_list\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'Scanning Publishers'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m----> 3\u001b[0;31m \u001b[0mbg_df\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Minimum Players'\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmin_players\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mi\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mprogressbar\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlog_progress\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mflatted_list\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'Scanning Min Players'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m      4\u001b[0m \u001b[0mbg_df\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'Max Players'\u001b[0m\u001b[0;34m]\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0;34m[\u001b[0m\u001b[0mi\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mmax_players\u001b[0m \u001b[0;32mfor\u001b[0m \u001b[0mi\u001b[0m \u001b[0;32min\u001b[0m \u001b[0mprogressbar\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mlog_progress\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mflatted_list\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0;34m'Scanning Max Players'\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      5\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;32m<ipython-input-1-796f97ba916a>\u001b[0m in \u001b[0;36mmin_players\u001b[0;34m(self)\u001b[0m\n\u001b[1;32m     59\u001b[0m     \u001b[0;32mdef\u001b[0m \u001b[0mmin_players\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m:\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     60\u001b[0m         \u001b[0;34m\"\"\"Minimum number of players, according to publisher\"\"\"\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m---> 61\u001b[0;31m         \u001b[0;32mreturn\u001b[0m \u001b[0mint\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mself\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mitem\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'minplayers'\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m[\u001b[0m\u001b[0;34m'@value'\u001b[0m\u001b[0;34m]\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m\u001b[1;32m     62\u001b[0m \u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m     63\u001b[0m     \u001b[0;34m@\u001b[0m\u001b[0mproperty\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n",
+      "\u001b[0;31mValueError\u001b[0m: invalid literal for int() with base 10: ''"
+     ]
+    }
+   ],
+   "source": [
+    "bg_df['Publisher'] = [i.publishers[0] for i in progressbar.log_progress(flatted_list, 'Scanning Publishers')]\n",
+    "bg_df['Minimum Players'] = [i.min_players for i in progressbar.log_progress(flatted_list, 'Scanning Min Players')]\n",
+    "bg_df['Max Players'] = [i.max_players for i in progressbar.log_progress(flatted_list, 'Scanning Max Players')]\n",
+    "\n",
+    "bg_df['Num_Ratings'] = [i.users_rated for i in progressbar.log_progress(flatted_list, 'Scanning Num Ratings')]\n",
+    "bg_df['Avg_Rating'] = [i.avg_rating for i in progressbar.log_progress(flatted_list, 'Scanning Ratings')]\n",
+    "bg_df['Bayes_Avg_Rating'] = [i.bayes_avg_rating for i in progressbar.log_progress(flatted_list, 'Scanning Bayes Rating')]\n",
+    "bg_df['Avg_Weight'] = [i.avg_weight for i in progressbar.log_progress(flatted_list, 'Scanning AVG Weight')]\n",
+    "bg_df['StDev_Rating'] = [i.stdev_rating for i in progressbar.log_progress(flatted_list, 'Scanning StDev Rating')]\n",
+    "\n",
+    "bg_df['Num_Owned'] = [i.num_owned for i in progressbar.log_progress(flatted_list, 'Scanning Num Owned')]\n",
+    "bg_df['Num_Comments'] = [i.num_comments for i in progressbar.log_progress(flatted_list, 'Scanning Num Comments')]\n",
+    "bg_df['Num_Trading'] = [i.num_trading for i in progressbar.log_progress(flatted_list, 'Scanning Num Tradings')]\n",
+    "bg_df['Num_Wanting'] = [i.num_wanting for i in progressbar.log_progress(flatted_list, 'Scanning Num Waiting')]\n",
+    "bg_df['Num_Wishing'] = [i.num_wishing for i in progressbar.log_progress(flatted_list, 'Scanning Num Wishing')]\n",
+    "bg_df['Num_Weights'] = [i.num_weights for i in progressbar.log_progress(flatted_list, 'Scanning Num weights')]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bg_df['Year'] = [i.year_published for i in progressbar.log_progress(flatted_list, 'Scanning Year Published')]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "bg_df"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Saving DataFrame to File and Database"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "complete_dataframe.to_csv('df.csv', sep='\\t', encoding='utf-8')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#games_df = pd.read_csv('df.csv', sep='\\t', encoding='utf-8')\n",
+    "#games_df = games_df.drop(\"Unnamed: 0\", axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import MySQLdb\n",
+    "from sqlalchemy import create_engine"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "engine = create_engine('mysql+mysqldb://coolmini_gonk:G0nkG0nk@venus.coolminiornot.com:3306/coolmini_business_intelligence', echo = False)\n",
+    "complete_dataframe.to_sql(name = 'BGG_Scraper', con = engine, if_exists = 'append', index = False)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "total_timer_end = time.time()\n",
+    "print('Total elapsed time: ', time.strftime(\"%H:%M:%S\", time.gmtime(total_timer_end-total_timer_start)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.1"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
